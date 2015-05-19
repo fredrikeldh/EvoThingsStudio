@@ -129,6 +129,7 @@ var mIO
 var mBasePath
 var mAppPath
 var mAppFile
+var mAppName
 var mIpAddress
 var mMessageCallback = null
 var mClientConnectedCallback = null
@@ -192,6 +193,11 @@ function webServerHookFunForScriptInjection(request, response, path)
 	if (false)//!mWhiteList[request.socket.remoteAddress])
 	{
 		return serveUnauthorizedRequest(request, response)
+	}
+
+	if(path == '/evocache-manifest.json')
+	{
+		return serveEvocacheManifestJson(request, response)
 	}
 
 	// Proceed serving requests.
@@ -438,9 +444,33 @@ function serveJsFile(response, path)
 /**
  * Internal.
  *
+ * Serve evocache-manifest.json.
+ */
+function serveEvocacheManifestJson(request, response)
+{
+	var manifest = {
+		name: mAppName,
+		files: [],
+		startPage: mAppFile,
+	}
+	window.console.log(JSON.stringify(manifest))
+	scanAppFiles(function(name, stat) {
+		if(!stat.isDirectory())
+			manifest.files.push(name.substr(mBasePath.length))
+	})
+
+	var content = JSON.stringify(manifest)
+
+	mWebServer.writeResponse(response, content, 'text/plain; charset=utf8')
+	return true
+}
+
+/**
+ * Internal.
+ *
  * Return script tags for reload functionality.
  */
-function createReloaderScriptTags(address)
+function createReloaderScriptTags()
 {
 	return ''
 		+ '<script src="/socket.io/socket.io.js"></script>'
@@ -466,9 +496,8 @@ function insertReloaderScript(html, request)
 	{
 		return false
 	}
-	var address = host.substr(0, host.indexOf(':'))
-	//window.console.log('address ' + address)
-	var script = createReloaderScriptTags(address)
+	// Create HTML tags for the reloader script.
+	var script = createReloaderScriptTags()
 
 	// Is there a template tag? In that case, insert script there.
 	var hasTemplateTag = (-1 != html.indexOf('<!--hyper.reloader-->'))
@@ -560,7 +589,7 @@ function getAppFileName()
  */
 function getAppFileURL()
 {
-	return 'http://' + mIpAddress + ':' + SETTINGS.WebServerPort + '/' + mAppFile
+	return getServerBaseURL() + mAppFile
 }
 
 /**
@@ -578,6 +607,26 @@ function getServerBaseURL()
 function runApp()
 {
 	mIO.emit('hyper.run', {url: getAppFileURL()})
+}
+
+/**
+ * External.
+ */
+function getAppCacheURL()
+{
+	return 'evocacheadd://' + mIpAddress + ':' + SETTINGS.WebServerPort + '/' + 'evocache-manifest.json'
+}
+
+/**
+ * External.
+ * Asks the client to cache the specified app.
+ */
+function cacheApp(name)
+{
+	if(!name)
+		throw "no name 1!"
+	mAppName = name
+	mIO.emit('hyper.cache', {url: getAppCacheURL()})
 }
 
 /**
@@ -895,9 +944,7 @@ function getNumberOfMonitoredFiles()
 function fileSystemMonitor()
 {
 	mFileCounter = 0
-	var filesUpdated = fileSystemMonitorWorker(
-		mBasePath,
-		mTraverseNumDirecoryLevels)
+	var filesUpdated = scanAppFiles(fileSystemMonitorCallback)
 	if (filesUpdated)
 	{
 		reloadApp()
@@ -910,71 +957,83 @@ function fileSystemMonitor()
 	}
 }
 
-/**
- * Internal.
- * Return true if a file ahs been updated, otherwise false.
- */
-function fileSystemMonitorWorker(path, level)
+// returns true if any callback returned true, false otherwise.
+// if a callback returns true, the scan is aborted.
+// sets mFileCounter.
+function scanAppFiles(callback)
 {
-	//window.console.log('fileSystemMonitorWorker path:level: ' + path + ':' + level)
-	if (!path) { return false }
-	try
-	{
-		/*var files = FS.readdirSync(path)
-		for (var i in files)
-		{
-			window.console.log(path + files[i])
-		}
-		return false*/
+	mFileCounter = 0
+	return scanAppFilesWorker(callback, mBasePath, mTraverseNumDirecoryLevels)
+}
 
+function shouldIgnoreAppFile(name)
+{
+	// dot files are hidden by UNIX systems, and should not be part of any HTML project.
+	// in Evothings projects, common dot files include ".git" and ".svn".
+	//window.console.log(typeof name, name)
+	return name.substr(0,1) == '.'
+}
+
+function scanAppFilesWorker(callback, path, level)
+{
+	//window.console.log('scanAppFilesWorker path:level: ' + path + ':' + level)
+	if (!path) { return false }
+	//try
+	{
 		var files = FS.readdirSync(path)
 		for (var i in files)
 		{
-			try
+			//try
 			{
-				var stat = FS.statSync(path + files[i])
-				var t = stat.mtime.getTime()
+				if(!files[i])
+					continue
+				if(shouldIgnoreAppFile(files[i]))
+					continue
+
+				var name = path + files[i]
+				var stat = FS.statSync(name)
 
 				if (stat.isFile())
 				{
 					++mFileCounter
 				}
 
-				//window.console.log('Checking file: ' + files[i] + ': ' + stat.mtime)
-				if (stat.isFile() && t > mLastReloadTime)
-				{
-					//window.console.log('***** File has changed ***** ' + files[i])
-					mLastReloadTime = Date.now()
+				if(callback(name, stat))
 					return true
-				}
-				else if (stat.isDirectory() && level > 0)
+
+				if (stat.isDirectory() && level > 0)
 				{
 					//window.console.log('Decending into: ' + path + files[i])
-					var changed = fileSystemMonitorWorker(
-						path + files[i] + '/',
-						level - 1)
-					if (changed) { return true }
+					if(scanAppFilesWorker(callback, path + files[i] + '/', level - 1))
+						return true
 				}
 			}
-			catch (err2)
+			/*catch (err2)
 			{
-				window.console.log('***** ERROR2 fileSystemMonitorWorker ****** ' + err2)
-			}
+				window.console.log('***** ERROR2 scanAppFilesWorker ****** ' + err2)
+			}*/
 		}
 	}
-	catch(err1)
+	/*catch(err1)
 	{
-		window.console.log('***** ERROR1 fileSystemMonitorWorker ****** ' + err1)
-	}
+		window.console.log('***** ERROR1 scanAppFilesWorker ****** ' + err1)
+	}*/
 	return false
 }
 
-/*window.console.log(mBasePath)
-var files = FS.readdirSync(mBasePath)
-for (var i in files)
+function fileSystemMonitorCallback(name, stat)
 {
-	window.console.log(files[i])
-}*/
+	var t = stat.mtime.getTime()
+
+	//window.console.log('Checking file: ' + name + ': ' + stat.mtime)
+	if (stat.isFile() && t > mLastReloadTime)
+	{
+		//window.console.log('***** File has changed ***** ' + name)
+		mLastReloadTime = Date.now()
+		return true
+	}
+	return false
+}
 
 /*********************************/
 /***	  Module exports	   ***/
@@ -991,6 +1050,7 @@ exports.getAppFileURL = getAppFileURL
 exports.getServerBaseURL = getServerBaseURL
 exports.runApp = runApp
 exports.reloadApp = reloadApp
+exports.cacheApp = cacheApp
 exports.evalJS = evalJS
 exports.setMessageCallbackFun = setMessageCallbackFun
 exports.setClientConnenctedCallbackFun = setClientConnenctedCallbackFun

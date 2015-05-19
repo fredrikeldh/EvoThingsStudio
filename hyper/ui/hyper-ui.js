@@ -321,6 +321,12 @@ hyper.UI = {}
 			'<div class="ui-state-default ui-corner-all">'
 				+ '<button '
 				+	'type="button" '
+				+	'class="button-cache btn btn-default" '
+				+	'onclick="hyper.cacheAppGuard(\'__PATH5__\', \'__NAME2__\')">'
+				+	'Cache'
+				+ '</button>'
+				+ '<button '
+				+	'type="button" '
 				+	'class="button-open btn btn-default" '
 				+	'onclick="hyper.openFileFolder(\'__PATH1__\')">'
 				+	'Code'
@@ -365,7 +371,9 @@ hyper.UI = {}
 		html = html.replace('__PATH2__', escapedPath)
 		html = html.replace('__PATH3__', getShortPathFromPath(path))
 		html = html.replace('__PATH4__', path)
+		html = html.replace('__PATH5__', escapedPath)
 		html = html.replace('__NAME__', name)
+		html = html.replace('__NAME2__', name)
 
 		// Create element.
 		var element = $(html)
@@ -657,6 +665,17 @@ hyper.UI = {}
 		}
 	}
 
+	hyper.cacheAppGuard = function(path, name)
+	{
+		if (!mRunAppGuardFlag)
+		{
+			mRunAppGuardFlag = true
+			if(!name)
+				throw "no name 2!"
+			hyper.cacheApp(path, name)
+		}
+	}
+
 	// The Run button in the UI has been clicked.
 	hyper.runApp = function(path)
 	{
@@ -688,6 +707,40 @@ hyper.UI = {}
 			hyper.UI.setConnectedCounter(mNumberOfConnectedClients) },
 			5000)
 	}
+
+	hyper.cacheApp = function(path, name)
+	{
+		// Prepend base path if this is not an absolute path.
+		if (!FILEUTIL.isPathAbsolute(path))
+		{
+			path = mApplicationBasePath + '/' + path
+		}
+
+		window.console.log('cacheApp: ' + path)
+
+		SERVER.setAppPath(path)
+		if(!name)
+			throw "no name 3!"
+
+		if (mNumberOfConnectedClients <= 0)
+		{
+			mRunAppGuardFlag = false
+			hyper.noClientConnectedHander()
+		}
+		else
+		{
+			// Otherwise, load the requested file on connected clients.
+			SERVER.cacheApp(name)
+		}
+
+		mNumberOfConnectedClients = 0
+
+		clearTimeout(mConnectedCounterTimer)
+		mConnectedCounterTimer = setTimeout(function() {
+			hyper.UI.setConnectedCounter(mNumberOfConnectedClients) },
+			5000)
+	}
+
 
 	hyper.noClientConnectedHander = function()
 	{

@@ -126,6 +126,20 @@ window.hyper = (function(hyper, socketIoPort)
 					300)
 			}
 		})
+		socket.on('hyper.cache', function(data)
+		{
+			if (!hyper.isCaching)
+			{
+				hyper.isCaching = true
+
+				// Show the loading toast.
+				hyper.showMessage('Caching')
+
+				setTimeout(function() {
+					window.location.replace(data.url) },
+					300)
+			}
+		})
 		socket.on('hyper.eval', function(data)
 		{
 			try
