@@ -3,10 +3,10 @@
 "examples/hue-lights/index.html",
 
 "examples/ble-scan/index.html",
+"examples/ble-discovery/index.html",
 "examples/ibeacon-scan/index.html",
 "examples/estimote-beacons/index.html",
 "examples/estimote-nearables/index.html",
-"examples/ble-discovery/index.html",
 
 "examples/ti-sensortag-accelerometer/index.html",
 "examples/ti-sensortag-sensors/index.html",
